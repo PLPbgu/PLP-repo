@@ -25,6 +25,7 @@ public class PLPLogicGenerator {
 
         generator.writeLine("from PLPClasses import *");
         generator.writeLine(String.format("from PLP_%s_classes import *",plp.getBaseName()));
+        generator.writeLine("from xml.dom import minidom");
         generator.newLine();
         generator.writeLine("# TODO update this variable to the max variable history needed");
         generator.writeLine(String.format("PLP_%s_HISTORY_LENGTH = 2",plp.getBaseName()));
@@ -40,9 +41,14 @@ public class PLPLogicGenerator {
         if (plp.getClass().isAssignableFrom(MaintainPLP.class)) {
             generator.writeLine("self.maintained_condition_true = " + (((MaintainPLP) plp).isInitiallyTrue() ? "True" : "False"));
         }
+
+        for (ProgressMeasure pm : plp.getProgressMeasures()) {
+            generator.writeLine(String.format("self.last_%s = 0", pm.getCondition().simpleString()));
+        }
+
         generator.dendent();
         generator.dendent();
-        generator.writeFileContent(PLPLogicGenerator.class.getResource("/PLPModuleHead.txt").getPath());
+        generator.writeFileContent(PLPLogicGenerator.class.getResourceAsStream("/PLPModuleHead.txt"));
         generator.newLine();
         generator.indent();
 
@@ -67,6 +73,11 @@ public class PLPLogicGenerator {
         }
         else if (plp.getPreConditions().size() == 1) {
             generator.writeLine("return " + generateIFcondition(plp.getPreConditions().get(0)));
+        }
+        else
+        {
+            generator.writeLine("# no preconditions defined in the plp");
+            generator.writeLine("return True");
         }
         generator.dendent();
         //
@@ -97,9 +108,15 @@ public class PLPLogicGenerator {
         else if (plp.getConcurrencyConditions().size() == 1) {
             generator.writeLine("return " + generateIFcondition(plp.getConcurrencyConditions().get(0)));
         }*/
-        generator.dendent();
+        if (plp.getConcurrencyConditions().size() == 0) {
+            generator.dendent();
+            generator.indent();
+            generator.writeLine("# no ConcurrencyConditions defined in the plp");
+            generator.writeLine("return None");
+            //generator.newLine();
+        }
         generator.newLine();
-        //
+        generator.dendent();
 
         // Maintain: maintained condition
         if (plp.getClass().isAssignableFrom(MaintainPLP.class)) {
@@ -205,6 +222,12 @@ public class PLPLogicGenerator {
             generator.writeLine("def variables(self):");
             generator.indent();
             generator.writeLine("# The newest variables");
+            generator.writeLine("if not self.variables_history:");
+            generator.indent();
+            generator.writeLine("return None");
+            generator.dendent();
+            generator.writeLine("else:");
+            generator.indent();
             generator.writeLine("return self.variables_history[0]");
         }
         else {
@@ -212,7 +235,7 @@ public class PLPLogicGenerator {
                 generator.writeLine(String.format("self.plp_vars.%1$s = self.calc_%1$s()",var.getName()));
             }
         }
-
+        generator.dendent();
         generator.dendent();
 
         generator.newLine();
@@ -226,7 +249,7 @@ public class PLPLogicGenerator {
             generator.writeLine(String.format("def calc_%s(self):",var.getName()));
             generator.indent();
             generator.writeLine("# TODO Implement code to calculate "+var.getName());
-            generator.writeLine("# return the value of the variable ");
+            generator.writeLine("# return the value of the variable");
             generator.writeLine("return None");
             generator.dendent();
             generator.newLine();
@@ -450,7 +473,7 @@ public class PLPLogicGenerator {
             generator.writeLine(String.format("result.add_failure(self.estimate_%s_failure())",
                     fm.getCondition().simpleString()));
         if (aplp.getFailureModes().size() == 0)
-            generator.writeLine("result.add_failure(PLPFailureMode(\"General Failure Prob\",self.estimate_failure)");
+            generator.writeLine("result.add_failure(PLPFailureMode())");
         generator.writeLine("result.failure_time = self.estimate_failure_time()");
         generator.writeLine("return result");
         generator.dendent();
@@ -458,7 +481,7 @@ public class PLPLogicGenerator {
 
         generator.writeLine("def estimate_success(self):");
         generator.indent();
-        writeBodyEstimateProb(aplp.getSuccessProb(), generator);
+        writeBodyEstimateProb(aplp, aplp.getSuccessProb(), generator);
         generator.dendent();
         generator.newLine();
 
@@ -475,7 +498,7 @@ public class PLPLogicGenerator {
         else {
             generator.writeLine("def estimate_failure(self):");
             generator.indent();
-            writeBodyEstimateProb(aplp.getGeneralFailureProb(), generator);
+            writeBodyEstimateProb(aplp, aplp.getGeneralFailureProb(), generator);
             generator.dendent();
             generator.newLine();
         }
@@ -509,7 +532,7 @@ public class PLPLogicGenerator {
 
         generator.writeLine("def estimate_success(self):");
         generator.indent();
-        writeBodyEstimateProb(mplp.getSuccessProb(), generator);
+        writeBodyEstimateProb(mplp, mplp.getSuccessProb(), generator);
         generator.dendent();
         generator.newLine();
 
@@ -526,7 +549,7 @@ public class PLPLogicGenerator {
         else {
             generator.writeLine("def estimate_failure(self):");
             generator.indent();
-            writeBodyEstimateProb(mplp.getGeneralFailureProb(), generator);
+            writeBodyEstimateProb(mplp, mplp.getGeneralFailureProb(), generator);
             generator.dendent();
             generator.newLine();
         }
@@ -562,7 +585,7 @@ public class PLPLogicGenerator {
 
         generator.writeLine("def estimate_correct_observation(self):");
         generator.indent();
-        writeBodyEstimateProb(oplp.getCorrectObservationProb(), generator);
+        writeBodyEstimateProb(oplp, oplp.getCorrectObservationProb(), generator);
         generator.dendent();
         generator.newLine();
 
@@ -576,7 +599,7 @@ public class PLPLogicGenerator {
 
         generator.writeLine("def estimate_failure_to_observe(self):");
         generator.indent();
-        writeBodyEstimateProb(oplp.getFailureToObserveProb(),generator);
+        writeBodyEstimateProb(oplp, oplp.getFailureToObserveProb(),generator);
         generator.dendent();
         generator.newLine();
 
@@ -600,7 +623,7 @@ public class PLPLogicGenerator {
 
         generator.writeLine("def estimate_detection_given_condition_prob(self):");
         generator.indent();
-        writeBodyEstimateProb(dplp.getSuccessProbGivenCondition(), generator);
+        writeBodyEstimateProb(dplp, dplp.getSuccessProbGivenCondition(), generator);
         generator.dendent();
         generator.newLine();
 
@@ -677,7 +700,7 @@ public class PLPLogicGenerator {
         generator.writeLine("return result");
     }
 
-    private static void writeBodyEstimateProb(List<ConditionalProb> probs, PythonWriter generator) {
+    private static void writeBodyEstimateProb(PLP plp, List<ConditionalProb> probs, PythonWriter generator) {
         generator.writeLine("result = \"\"");
         for (ConditionalProb cProb : probs) {
             if (cProb.isConditional()) {
@@ -685,8 +708,26 @@ public class PLPLogicGenerator {
             }
             else {
                 generator.writeLine("# TODO Implement the code that computes and returns the following probability");
-                generator.writeLine("# probability = " + cProb.getProb().toString());
-                generator.writeLine("result = to_implement");
+                generator.writeLine("# first defined probability = " + cProb.getProb().toString());
+                generator.writeLine("import inspect");
+                generator.writeLine("import os");
+                generator.writeLine("parent_dir = os.path.abspath(os.path.abspath(os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe()))) + \"/../\") + \"/../\")");
+                generator.writeLine(String.format("xml = minidom.parse(parent_dir+'/%s.xml')",plp.getBaseName()));
+                generator.writeLine("parent = xml.getElementsByTagName(\"success_probability\")");
+                generator.writeLine("if parent:");
+                generator.indent();
+                generator.writeLine("for item in parent:");
+                generator.indent();
+                generator.writeLine("for child in item.getElementsByTagName('probability'):");
+                generator.indent();
+                generator.writeLine("result = child.getAttribute('value')");
+                generator.dendent();
+                generator.dendent();
+                generator.dendent();
+                generator.writeLine("else:");
+                generator.indent();
+                generator.writeLine("result = \"" + cProb.getProb().toString()+"\"");
+                generator.dendent();
             }
         }
         generator.writeLine("return result");
@@ -804,12 +845,13 @@ public class PLPLogicGenerator {
                 || Formula.class.isInstance(cProb.getCondition())
                 || QuantifiedCondition.class.isInstance(cProb.getCondition())) {
             if (!conditionMethods.get(cProb.getCondition()).equals("uncomputable")) {
-                generator.writeLine("if "+conditionMethods.get(cProb.getCondition())+":");
+                generator.writeLine("if "+generateIFcondition(cProb.getCondition())+":");
                 generator.indent();
                 generator.writeLine("# TODO Implement the code that computes and returns the following probability");
                 generator.writeLine("# probability = " + cProb.getProb());
                 generator.writeLine("result = to_implement");
                 generator.newLine();
+                generator.dendent();
             }
             else {
                 generator.writeLine("# TODO Implement the code that computes \"prob\" to be the following probability");
@@ -941,10 +983,10 @@ public class PLPLogicGenerator {
                 || QuantifiedCondition.class.isInstance(condition)) {
             if (conditionMethods.get(condition).equals("uncomputable"))
                 return "(False)";
-            return "(self." + conditionMethods.get(condition).replaceAll("self","") + ")";
+            return "self." + conditionMethods.get(condition).replaceAll("self","");
         }
         else if (NotCondition.class.isInstance(condition)) {
-            return "(not " + generateIFcondition(((NotCondition) condition).getCondition()) + ")";
+            return "not " + generateIFcondition(((NotCondition) condition).getCondition());
         }
         else if (BitwiseOperation.class.isInstance(condition)) {
             BitwiseOperation bOP = (BitwiseOperation) condition;
@@ -1175,16 +1217,16 @@ public class PLPLogicGenerator {
         generator.writeLine("# Can estimate if got values for all of the parameters");
         generator.writeLine("# TODO: if not all parameters needed in order to estimate, remove some of the following conditions:");
         StringBuilder paramsCheck = new StringBuilder();
-        paramsCheck.append("return not (");
+        paramsCheck.append("return not ");
         for (PLPParameter param : plp.getExecParams()) {
-            paramsCheck.append(String.format("(self.plp_params.%s is None) or ",param.simpleString()));
+            paramsCheck.append(String.format("self.plp_params.%s is None or ",param.simpleString()));
         }
         for (PLPParameter param : plp.getInputParams()) {
-            paramsCheck.append(String.format("(self.plp_params.%s is None) or ",param.simpleString()));
+            paramsCheck.append(String.format("self.plp_params.%s is None or ",param.simpleString()));
         }
         // TODO: check if no params
         paramsCheck.delete(paramsCheck.length()-4,paramsCheck.length());
-        paramsCheck.append(")");
+        //paramsCheck.append(")");
 
         generator.writeLine(paramsCheck.toString());
         generator.setIndent(0);

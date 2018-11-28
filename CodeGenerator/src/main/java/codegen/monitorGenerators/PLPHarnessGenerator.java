@@ -30,6 +30,8 @@ public class PLPHarnessGenerator {
         generator.writeLine("#!/usr/bin/env python");
         generator.writeLine("import rospy");
         generator.writeLine("import sys");
+        generator.writeLine("import logging");
+        generator.writeLine("from xml.dom import minidom");
 
         generator.newLine();
         handleGlueFile(generator, plp, path);
@@ -39,16 +41,14 @@ public class PLPHarnessGenerator {
         generator.writeLine(String.format("from PLP_%s_classes import *",plp.getBaseName()));
         generator.newLine();
         generator.writeLine(String.format("PLP_TOPIC = \"%s\"",CodeGenerator.outputTopic));
-
+        generator.writeLine(String.format("logger = logging.getLogger(\"%s\")",plp.getBaseName()));
         generator.newLine();
         generator.writeLine(String.format("class PLP_%s_ros_harness(object):",plp.getBaseName()));
         generator.indent();
         generator.newLine();
         generateInitFunction(generator,plp);
 
-
-        generator.writeFileContent(PLPHarnessGenerator.class.getResource("/HarnessMain.txt").getPath(),
-                plp.getBaseName(), plp.getClass().getSimpleName());
+        generator.writeFileContent(PLPHarnessGenerator.class.getResourceAsStream("/HarnessMain.txt"), plp.getBaseName(), plp.getClass().getSimpleName());
 
         generator.dendent();
         generator.writeLine("def reset_harness_data(self):");
@@ -68,6 +68,10 @@ public class PLPHarnessGenerator {
         generator.writeLine("def trigger_plp_task(self):");
         generator.indent();
         generator.writeLine("# Creates a PLP and starts the monitoring, if there's no PLP yet.");
+        generator.writeLine("# Write to logger that trigger start");
+        generator.writeLine(String.format("logger.info('%s: trigger start')",plp.getBaseName()));
+        generator.writeLine("# Start timer");
+        generator.writeLine("self.plp_params.timer_start = rospy.Time.now().to_sec()");
         generator.writeLine(String.format("rospy.loginfo(\"<PLP:%s> trigger detected, starting \" + \"monitoring\" if self.monitor else \"capturing\")",plp.getBaseName()));
         generator.writeLine(String.format("self.plp = PLP_%s_logic(self.plp_constants, self.plp_params, self)",plp.getBaseName()));
         generator.writeLine("self.plp_params.callback = self.plp");
@@ -118,13 +122,18 @@ public class PLPHarnessGenerator {
         generator.writeLine("# You can also use the defined constants using self.plp_constants[<constant_name>]");
         generator.writeLine(String.format("# (All the parameters are defined in PLP_%s_classes.py)",plp.getBaseName()));
         StringBuilder triggerCheck = new StringBuilder();
-        triggerCheck.append("return not (");
-        for (PLPParameter param : plp.getExecParams()) {
-            triggerCheck.append(String.format("(self.plp_params.%s is None) or ",param.simpleString()));
+        if(plp.getExecParams().size()>0) {
+            triggerCheck.append("return not ");
+            for (PLPParameter param : plp.getExecParams()) {
+                triggerCheck.append(String.format("self.plp_params.%s is None or ", param.simpleString()));
+            }
+            triggerCheck.delete(triggerCheck.length() - 4, triggerCheck.length());
+            triggerCheck.append("");
         }
-        // TODO: check if no params
-        triggerCheck.delete(triggerCheck.length()-4,triggerCheck.length());
-        triggerCheck.append(")");
+        else
+        {
+            generator.writeLine("# TODO: decide the trigger for the code module");
+        }
         generator.writeLine(triggerCheck.toString());
         generator.dendent();
         generator.newLine();
@@ -175,7 +184,13 @@ public class PLPHarnessGenerator {
         generator.writeLine("self.plp = None");
         generator.writeLine(String.format("self.plp_params = PLP_%s_parameters()",plp.getBaseName()));
         generator.newLine();
-        generator.writeFileContent(PLPHarnessGenerator.class.getResource("/HarnessInit.txt").getPath());
+        generator.writeLine("# Defined Logging");
+        generator.writeLine(String.format("hdlr = logging.FileHandler('/var/tmp/%s.log')",plp.getBaseName()));
+        generator.writeLine("formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')");
+        generator.writeLine("hdlr.setFormatter(formatter)");
+        generator.writeLine("logger.addHandler(hdlr)");
+        generator.newLine();
+        generator.writeFileContent(PLPHarnessGenerator.class.getResourceAsStream("/HarnessInit.txt"));
         generator.newLine();
         generator.writeLine("self.triggered = False");
         generator.newLine();
@@ -303,7 +318,8 @@ public class PLPHarnessGenerator {
                 if (pack != null){
                     generator.write("from "+pack+" ");
                     /// Adding it to the list, to later add it to the CMakeLists and package.xml
-                    CodeGenerator.importsForPackage.add(pack);
+                    if (!CodeGenerator.importsForPackage.contains(pack))
+                        CodeGenerator.importsForPackage.add(pack);
                 }
                 generator.write("import ");
                 NodeList classesNodes = importElement.getElementsByTagName("python_class");
